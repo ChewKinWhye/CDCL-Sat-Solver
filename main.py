@@ -67,7 +67,7 @@ def test_CDCL(num_test_cases):
 
 if __name__ == "__main__":
     num_test_cases = 10
-    generate_test_cases(100, 400, 3, num_test_cases)
+    generate_test_cases(50, 200, 3, num_test_cases)
     print("Test cases generated")
     obtain_labels(num_test_cases)
     print("Labels obtained")
