@@ -45,6 +45,8 @@ def generate_test_case(N, L, K):
   return DIMACS
 
 def generate_test_cases(N, L, K, num_test_cases):
+    if not os.path.exists(base_dir):
+        os.makedirs(base_dir)
     for i in range(num_test_cases):
         test_case = generate_test_case(N, L, K)
         with open(os.path.join(base_dir, f"test_case_{i+1}.cnf"), "w") as f:
