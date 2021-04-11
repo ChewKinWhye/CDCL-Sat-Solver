@@ -45,7 +45,7 @@ def test_CDCL(num_test_cases):
                     prop.add(variable)
         start = time.perf_counter()
         print(f"Test Case: {i}")
-        sat = CDCL([cnf], [{}], [prop], [[]])
+        sat = CDCL([cnf], [{}], [prop], [[]], [[]])
         if sat == "UNSAT":
             sat = "False"
         else:
@@ -61,7 +61,7 @@ def test_CDCL(num_test_cases):
 
 if __name__ == "__main__":
     num_test_cases = 1
-    generate_test_cases(80, 300, 3, num_test_cases)
+    generate_test_cases(20, 100, 3, num_test_cases)
     print("Test cases generated")
     obtain_labels(num_test_cases)
     print("Labels obtained")
