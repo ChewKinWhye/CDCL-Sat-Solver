@@ -4,6 +4,7 @@ SAT solver using CDCL
 import os
 import time
 from collections import deque
+import copy
 
 TRUE = 1
 FALSE = 0
@@ -13,12 +14,12 @@ UNASSIGN = -1
 class Solver:
 
     def __init__(self, filename):
+        self.level = 0
         self.filename = filename
         self.cnf, self.vars = Solver.read_file(filename)
         self.learnts = set()
-        self.assigns = dict.fromkeys(list(self.vars), UNASSIGN)
-        self.level = 0
-        self.nodes = dict((k, ImplicationNode(k, UNASSIGN)) for k in list(self.vars))
+        self.assigns = dict.fromkeys(list(self.vars[self.level]), UNASSIGN)
+        self.nodes = dict((k, ImplicationNode(k, UNASSIGN)) for k in list(self.vars[self.level]))
         self.branching_vars = set()
         self.branching_history = {}  # level -> branched variable
         self.propagate_history = {}  # level -> propagate variables list
@@ -40,10 +41,13 @@ class Solver:
                 self.learnts.add(learnt)
                 self.backtrack(lvl)
                 self.level = lvl
+                assert(self.level +1 == len(self.cnf))
             elif self.are_all_variables_assigned():
                 break
             else:
                 # branching
+                self.cnf.append(copy.deepcopy(self.cnf[self.level]))
+                self.vars.append(copy.deepcopy(self.vars[self.level]))
                 self.level += 1
                 self.branching_count += 1
                 bt_var, bt_val = self.pick_branching_variable()
@@ -52,6 +56,7 @@ class Solver:
                 self.branching_history[self.level] = bt_var
                 self.propagate_history[self.level] = deque()
                 self.update_graph(bt_var)
+                assert (self.level + 1 == len(self.cnf))
 
         return True
 
@@ -92,7 +97,7 @@ class Solver:
         if len(literals) != count_literals or len(lines) - 1 != count_clauses:
             pass
 
-        return clauses, literals
+        return [clauses], [literals]
 
     def compute_value(self, literal):
         """
@@ -111,7 +116,7 @@ class Solver:
         return value
 
     def compute_cnf(self):
-        return min(map(self.compute_clause, self.cnf))
+        return min(map(self.compute_clause, self.cnf[self.level]))
 
     def is_unit_clause(self, clause):
         """
@@ -159,7 +164,7 @@ class Solver:
         """
         while True:
             propagate_queue = deque()
-            for clause in [x for x in self.cnf.union(self.learnts)]:
+            for clause in [x for x in self.cnf[self.level].union(self.learnts)]:
                 c_val = self.compute_clause(clause)
                 if c_val == TRUE:
                     continue
@@ -184,33 +189,12 @@ class Solver:
                 except KeyError:
                     pass  # propagated at level 0
 
-    def unit_prop(clauses, assignment, prop, level, update_literal, update_value, history):
-        to_update = True
-        if update_literal is not None:
-            variable_assignment(clauses, assignment, prop, level, update_literal, update_value, None, history)
-        while to_update:
-            to_update = False
-            for idx, clause in enumerate(clauses[level]):
-                if len(clause) == 0:
-                    return idx
-                elif len(clause) == 1 and clause != "T":
-                    literal = list(clause)[0]
-                    if literal < 0:
-                        update_value = 0
-                        update_literal = -literal
-                    else:
-                        update_value = 1
-                        update_literal = literal
-                    variable_assignment(clauses, assignment, prop, level, update_literal, update_value, idx, history)
-                    to_update = True
-                    break
-        return "SAT"
 
     def get_unit_clauses(self):
-        return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf)))
+        return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf[self.level])))
 
     def are_all_variables_assigned(self):
-        for var in self.vars:
+        for var in self.vars[self.level]:
             if self.assigns[var] == UNASSIGN:
                 return False
         return True
@@ -218,7 +202,7 @@ class Solver:
     def all_unassigned_vars(self):
         return filter(
             lambda v: v in self.assigns and self.assigns[v] == UNASSIGN,
-            self.vars)
+            self.vars[self.level])
 
     # def pick_branching_variable(self, bt_var=None, bt_val=None):
     def pick_branching_variable(self):
@@ -307,17 +291,18 @@ class Solver:
                 self.assigns[node.variable] = UNASSIGN
 
         self.branching_vars = set([
-            var for var in self.vars
+            var for var in self.vars[self.level]
             if (self.assigns[var] != UNASSIGN
                 and len(self.nodes[var].parents) == 0)
         ])
 
         levels = list(self.propagate_history.keys())
         for k in levels:
-            if k <= level:
-                continue
-            del self.branching_history[k]
-            del self.propagate_history[k]
+            if k > level:
+                del self.branching_history[k]
+                del self.propagate_history[k]
+        del self.vars[level+1:]
+        del self.cnf[level+1:]
 
 
 
