@@ -1,4 +1,6 @@
-from online_copy import Solver
+from online_copy_refactored import Solver
+# from online_copy import Solver
+
 import time
 import csv
 from utils import read_data, generate_test_cases, obtain_labels, calc_accuracy
@@ -13,7 +15,6 @@ def test_online(num_test_cases):
         file = os.path.join(base_dir, f"test_case_{i}.cnf")
         print(f"Test Case: {i}")
         solver = Solver(file)
-
         start = time.perf_counter()
 
         sat = solver.solve()
@@ -27,7 +28,7 @@ def test_online(num_test_cases):
 
 
 if __name__ == "__main__":
-    num_test_cases = 100
+    num_test_cases = 1000
     generate_test_cases(20, 100, 3, num_test_cases)
     print("Test cases generated")
     obtain_labels(num_test_cases)

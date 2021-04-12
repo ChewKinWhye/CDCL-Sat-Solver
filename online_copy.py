@@ -24,36 +24,12 @@ class Solver:
         self.propagate_history = {}  # level -> propagate variables list
         self.branching_count = 0
 
-    def run(self):
-        start_time = time.time()
-        sat = self.solve()
-        spent = time.time() - start_time
-        answer = self.output_answer(sat, spent)
-        return sat, spent, answer
-
-    def output_answer(self, sat, time):
-        answer = os.linesep.join([
-            'c ====================',
-            'c pysat reading from {}',
-            'c ====================',
-            's {}',
-            'v {}',
-            'c Done (time: {:.2f} s, picked: {} times)'
-        ])
-        values = ' '.join(['{}{}'.format('' if v == 1 else '-', k)
-                           for k, v in self.assigns.items()])
-        return answer.format(self.filename,
-                             'SATISFIABLE' if sat else 'UNSATISFIABLE',
-                             values if sat else '',
-                             time,
-                             self.branching_count)
 
     def solve(self):
         """
         Returns TRUE if SAT, False if UNSAT
         :return: whether there is a solution
         """
-        self.preprocess()
         while not self.are_all_variables_assigned():
             conf_cls = self.unit_propagate()
             if conf_cls is not None:
@@ -79,9 +55,6 @@ class Solver:
 
         return True
 
-    def preprocess(self):
-        """ Injects before solving """
-        pass
 
     @staticmethod
     def read_file(filename):
@@ -211,13 +184,36 @@ class Solver:
                 except KeyError:
                     pass  # propagated at level 0
 
+    def unit_prop(clauses, assignment, prop, level, update_literal, update_value, history):
+        to_update = True
+        if update_literal is not None:
+            variable_assignment(clauses, assignment, prop, level, update_literal, update_value, None, history)
+        while to_update:
+            to_update = False
+            for idx, clause in enumerate(clauses[level]):
+                if len(clause) == 0:
+                    return idx
+                elif len(clause) == 1 and clause != "T":
+                    literal = list(clause)[0]
+                    if literal < 0:
+                        update_value = 0
+                        update_literal = -literal
+                    else:
+                        update_value = 1
+                        update_literal = literal
+                    variable_assignment(clauses, assignment, prop, level, update_literal, update_value, idx, history)
+                    to_update = True
+                    break
+        return "SAT"
+
     def get_unit_clauses(self):
         return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf)))
 
     def are_all_variables_assigned(self):
-        all_assigned = all(var in self.assigns for var in self.vars)
-        none_unassigned = not any(var for var in self.vars if self.assigns[var] == UNASSIGN)
-        return all_assigned and none_unassigned
+        for var in self.vars:
+            if self.assigns[var] == UNASSIGN:
+                return False
+        return True
 
     def all_unassigned_vars(self):
         return filter(
@@ -256,7 +252,6 @@ class Solver:
         if self.level == 0:
             return -1, None
 
-
         assign_history = [self.branching_history[self.level]] + list(self.propagate_history[self.level])
 
         pool_lits = conf_cls
@@ -290,6 +285,7 @@ class Solver:
             level = max([self.nodes[abs(x)].level for x in prev_level_lits])
         else:
             level = self.level - 1
+        # print(f"Level Change: {self.level - level}")
 
         return level, learnt
 
@@ -298,6 +294,7 @@ class Solver:
         Non-chronologically backtrack ("back jump") to the appropriate decision level,
         where the first-assigned variable involved in the conflict was assigned
         """
+
         for var, node in self.nodes.items():
             if node.level <= level:
                 node.children[:] = [child for child in node.children if child.level <= level]
