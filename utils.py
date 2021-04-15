@@ -78,6 +78,7 @@ def read_data(file_path):
 
 def obtain_labels(num_test_cases):
     row_solution = []
+    num_sat = 0
     for i in range(1, num_test_cases+1):
         s = Solver()
         file = f"test_case_{i}.cnf"
@@ -86,6 +87,8 @@ def obtain_labels(num_test_cases):
             s.add_clause(row)
         start = time.perf_counter()
         sat, _ = s.solve()
+        if sat:
+            num_sat += 1
         time_taken = time.perf_counter() - start
         row_solution.append([i, sat, time_taken])
     with open(os.path.join(base_dir, 'labels.csv'), 'w', newline='') as csvfile:
@@ -93,7 +96,7 @@ def obtain_labels(num_test_cases):
                                 quotechar='|', quoting=csv.QUOTE_MINIMAL)
         for row in row_solution:
             spamwriter.writerow(row)
-
+    return num_sat
 
 
 

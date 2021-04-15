@@ -1,5 +1,5 @@
-from online_copy_refactored import Solver
-# from online_copy import Solver
+# from online_copy_refactored import Solver
+from online_copy import Solver
 
 import time
 import csv

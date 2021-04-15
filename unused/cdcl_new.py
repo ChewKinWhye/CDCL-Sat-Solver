@@ -1,10 +1,14 @@
 import copy
-import time
-
 
 def pick_branching_variable(variables, level, total_branching_choices):
-    total_branching_choices[level].add((variables[level][0], 1))
-    return variables[level][0], 1
+    if (variables[level][0], 1) in total_branching_choices[level]:
+        return False, False
+    elif (variables[level][0], 0) in total_branching_choices[level]:
+        total_branching_choices[level].add((variables[level][0], 1))
+        return variables[level][0], 1
+    else:
+        total_branching_choices[level].add((variables[level][0], 0))
+        return variables[level][0], 0
 
 
 
@@ -37,8 +41,9 @@ def variable_assignment(clauses, assignment, variables, level, update_literal, u
 
 
 def unit_prop(clauses, assignment, variables, level, total_history):
-    while True:
-        to_update = {}
+    to_update = True
+    while to_update:
+        to_update = False
         for idx, clause in enumerate(clauses[level]):
             if len(clause) == 0:
                 return clauses[0][idx]
@@ -46,12 +51,9 @@ def unit_prop(clauses, assignment, variables, level, total_history):
                 literal = list(clause)[0]
                 update_value = 0 if literal < 0 else 1
                 update_literal = abs(literal)
-                if update_literal not in to_update:
-                    to_update[update_literal] = (update_value, idx)
-        if len(to_update) == 0:
-            break
-        for update in to_update:
-            variable_assignment(clauses, assignment, variables, level, update, to_update[update][0], to_update[update][1], total_history)
+                variable_assignment(clauses, assignment, variables, level, update_literal, update_value, idx, total_history)
+                to_update = True
+                break
     return None
 
 
@@ -79,10 +81,8 @@ def next_recent_assigned(clause, level_history):
             return v, [x for x in clause if abs(x) != abs(v)]
 
 
-def conflict_analyze(conf_cls, total_history, assignment, clauses, level):
-    if level == 0:
-        return -1, None
-
+def conflict_analyze(conf_cls, total_history, assignment, clauses, level, update_literal, update_value):
+    # initial_level = level
     pool_lits = conf_cls
     done_lits = set()
     curr_level_lits = set()
@@ -104,13 +104,14 @@ def conflict_analyze(conf_cls, total_history, assignment, clauses, level):
         curr_level_lits = set(others)
 
         if assignment[level][abs(last_assigned)][1] is None:
+            assert abs(last_assigned) == update_literal
             pool_lits = []
         else:
             pool_clause = clauses[0][assignment[level][abs(last_assigned)][1]]
             pool_lits = [l for l in pool_clause if abs(l) not in done_lits]
 
-    learnt = [l for l in curr_level_lits.union(prev_level_lits)]
-    if prev_level_lits:
+    learnt = frozenset([l for l in curr_level_lits.union(prev_level_lits)])
+    if prev_level_lits and update_value == 1:
         level = max([assignment[level][abs(x)][2] for x in prev_level_lits])
     else:
         level = level - 1
@@ -121,37 +122,28 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, total
     # Initialize variables
     level = 0
 
+    # Run unit prop
+    unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
+    if unsat_clause is not None:
+        return False
+
     # Backtrack seach loop
     while len(variables[level]) != 0:
         # Pick variable
-        # Run unit prop
-        unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
-        if unsat_clause is not None:
-            level, learnt = conflict_analyze(unsat_clause, total_history, assignment, clauses, level)
+
+        sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level+1)
+        update_literal, update_value = pick_branching_variable(variables, level, total_branching_choices)
+        sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level + 1)
+
+        if update_literal is False:
+            # No valid assignments on this level
+            level -= 1
             if level < 0:
                 return False
-            for i in range(level + 1):
-                learnt_copy = []
-                for literal in learnt:
-                    if abs(literal) in assignment[i]:
-                        if literal < 0:
-                            assert assignment[i][abs(literal)][0] == 1
-                        else:
-                            assert assignment[i][abs(literal)][0] == 0
-                    else:
-                        learnt_copy.append(literal)
-                clauses[i].append(copy.deepcopy(learnt_copy))
-
-            backtrack(clauses, assignment, variables, level, branching_history, total_history, total_branching_choices)
-            sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices,
-                         level + 1)
-        elif len(variables[level]) == 0:
-            break
-        else:
-            sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level+1)
-            update_literal, update_value = pick_branching_variable(variables, level, total_branching_choices)
+            backtrack(clauses, assignment, variables, level, branching_history, total_branching_choices, total_history)
             sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level + 1)
 
+        else:
             # Branch and expand search tree, go to next level
             clauses.append(copy.deepcopy(clauses[level]))
             assignment.append(copy.deepcopy(assignment[level]))
@@ -164,6 +156,15 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, total
             # Run Unit Prop
             sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level + 1)
             variable_assignment(clauses, assignment, variables, level, update_literal, update_value, None, total_history)
+            unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
+
             sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level+1)
+            if unsat_clause is not None:
+                # level, learnt = conflict_analyze(unsat_clause, total_history, assignment, clauses, level, update_literal, update_value)
+                level -= 1
+                if level < 0:
+                    return False
+                backtrack(clauses, assignment, variables, level, branching_history, total_history, total_branching_choices)
+                sanity_check(clauses, assignment, variables, branching_history, total_history, total_branching_choices, level + 1)
 
     return True

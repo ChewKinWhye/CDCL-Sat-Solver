@@ -164,7 +164,7 @@ class Solver:
         """
         while True:
             propagate_queue = deque()
-            for clause in [x for x in self.cnf[self.level].union(self.learnts)]:
+            for clause in [x for x in self.cnf[self.level]]:
                 c_val = self.compute_clause(clause)
                 if c_val == TRUE:
                     continue
@@ -194,10 +194,8 @@ class Solver:
         return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf[self.level])))
 
     def are_all_variables_assigned(self):
-        for var in self.vars[self.level]:
-            if self.assigns[var] == UNASSIGN:
-                return False
-        return True
+        return len(self.vars[self.level]) == 0
+
 
     def all_unassigned_vars(self):
         return filter(
