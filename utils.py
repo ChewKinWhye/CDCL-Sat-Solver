@@ -72,7 +72,7 @@ def read_data(file_path):
             else:
                 content = line.split()
                 content_int = [int(i) for i in content[:-1]]
-                cnf.append(content_int)
+                cnf.append(set(content_int))
     return num_variables, num_clauses, cnf
 
 
