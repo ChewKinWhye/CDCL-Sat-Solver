@@ -4,50 +4,70 @@ SAT solver using CDCL
 import os
 import time
 from collections import deque
-import copy
 
-TRUE = 1
-FALSE = 0
-UNASSIGN = -1
 
+TRUE, FALSE, UNASSIGN = 1, 0, -1
 
 class Solver:
 
     def __init__(self, filename):
-        self.level = 0
         self.filename = filename
         self.cnf, self.vars = Solver.read_file(filename)
         self.learnts = set()
-        self.assigns = dict.fromkeys(list(self.vars[self.level]), UNASSIGN)
-        self.nodes = dict((k, ImplicationNode(k, UNASSIGN)) for k in list(self.vars[self.level]))
+        self.assigns = dict.fromkeys(list(self.vars), UNASSIGN)
+        self.level = 0
+        self.nodes = dict((k, ImplicationNode(k, UNASSIGN)) for k in list(self.vars))
         self.branching_vars = set()
         self.branching_history = {}  # level -> branched variable
         self.propagate_history = {}  # level -> propagate variables list
         self.branching_count = 0
 
+    def run(self):
+        start_time = time.time()
+        sat = self.solve()
+        spent = time.time() - start_time
+        answer = self.output_answer(sat, spent)
+        return sat, spent, answer
+
+    def output_answer(self, sat, time):
+        answer = os.linesep.join([
+            'c ====================',
+            'c pysat reading from {}',
+            'c ====================',
+            's {}',
+            'v {}',
+            'c Done (time: {:.2f} s, picked: {} times)'
+        ])
+        values = ' '.join(['{}{}'.format('' if v == 1 else '-', k)
+                           for k, v in self.assigns.items()])
+        return answer.format(self.filename,
+                             'SATISFIABLE' if sat else 'UNSATISFIABLE',
+                             values if sat else '',
+                             time,
+                             self.branching_count)
 
     def solve(self):
         """
         Returns TRUE if SAT, False if UNSAT
         :return: whether there is a solution
         """
+        num_loops = 0
+        self.preprocess()
         while not self.are_all_variables_assigned():
+            num_loops += 1
             conf_cls = self.unit_propagate()
             if conf_cls is not None:
                 # there is conflict in unit propagation
                 lvl, learnt = self.conflict_analyze(conf_cls)
                 if lvl < 0:
-                    return False
+                    return False, num_loops
                 self.learnts.add(learnt)
                 self.backtrack(lvl)
                 self.level = lvl
-                assert(self.level +1 == len(self.cnf))
             elif self.are_all_variables_assigned():
                 break
             else:
                 # branching
-                self.cnf.append(copy.deepcopy(self.cnf[self.level]))
-                self.vars.append(copy.deepcopy(self.vars[self.level]))
                 self.level += 1
                 self.branching_count += 1
                 bt_var, bt_val = self.pick_branching_variable()
@@ -56,10 +76,12 @@ class Solver:
                 self.branching_history[self.level] = bt_var
                 self.propagate_history[self.level] = deque()
                 self.update_graph(bt_var)
-                assert (self.level + 1 == len(self.cnf))
 
-        return True
+        return True, num_loops
 
+    def preprocess(self):
+        """ Injects before solving """
+        pass
 
     @staticmethod
     def read_file(filename):
@@ -81,23 +103,16 @@ class Solver:
 
         if lines[0][:2] == ['p', 'cnf']:
             count_literals, count_clauses = map(int, lines[0][-2:])
-        else:
-            pass
 
         literals = set()
         clauses = set()
 
         for line in lines[1:]:
-            if line[-1] != '0':
-                pass
             clause = frozenset(map(int, line[:-1]))
             literals.update(map(abs, clause))
             clauses.add(clause)
 
-        if len(literals) != count_literals or len(lines) - 1 != count_clauses:
-            pass
-
-        return [clauses], [literals]
+        return clauses, literals
 
     def compute_value(self, literal):
         """
@@ -116,7 +131,7 @@ class Solver:
         return value
 
     def compute_cnf(self):
-        return min(map(self.compute_clause, self.cnf[self.level]))
+        return min(map(self.compute_clause, self.cnf))
 
     def is_unit_clause(self, clause):
         """
@@ -164,7 +179,7 @@ class Solver:
         """
         while True:
             propagate_queue = deque()
-            for clause in [x for x in self.cnf[self.level]]:
+            for clause in [x for x in self.cnf.union(self.learnts)]:
                 c_val = self.compute_clause(clause)
                 if c_val == TRUE:
                     continue
@@ -189,18 +204,18 @@ class Solver:
                 except KeyError:
                     pass  # propagated at level 0
 
-
     def get_unit_clauses(self):
-        return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf[self.level])))
+        return list(filter(lambda x: x[0], map(self.is_unit_clause, self.cnf)))
 
     def are_all_variables_assigned(self):
-        return len(self.vars[self.level]) == 0
-
+        all_assigned = all(var in self.assigns for var in self.vars)
+        none_unassigned = not any(var for var in self.vars if self.assigns[var] == UNASSIGN)
+        return all_assigned and none_unassigned
 
     def all_unassigned_vars(self):
         return filter(
             lambda v: v in self.assigns and self.assigns[v] == UNASSIGN,
-            self.vars[self.level])
+            self.vars)
 
     # def pick_branching_variable(self, bt_var=None, bt_val=None):
     def pick_branching_variable(self):
@@ -233,6 +248,7 @@ class Solver:
 
         if self.level == 0:
             return -1, None
+
 
         assign_history = [self.branching_history[self.level]] + list(self.propagate_history[self.level])
 
@@ -267,7 +283,6 @@ class Solver:
             level = max([self.nodes[abs(x)].level for x in prev_level_lits])
         else:
             level = self.level - 1
-        # print(f"Level Change: {self.level - level}")
 
         return level, learnt
 
@@ -276,7 +291,6 @@ class Solver:
         Non-chronologically backtrack ("back jump") to the appropriate decision level,
         where the first-assigned variable involved in the conflict was assigned
         """
-
         for var, node in self.nodes.items():
             if node.level <= level:
                 node.children[:] = [child for child in node.children if child.level <= level]
@@ -289,18 +303,17 @@ class Solver:
                 self.assigns[node.variable] = UNASSIGN
 
         self.branching_vars = set([
-            var for var in self.vars[self.level]
+            var for var in self.vars
             if (self.assigns[var] != UNASSIGN
                 and len(self.nodes[var].parents) == 0)
         ])
 
         levels = list(self.propagate_history.keys())
         for k in levels:
-            if k > level:
-                del self.branching_history[k]
-                del self.propagate_history[k]
-        del self.vars[level+1:]
-        del self.cnf[level+1:]
+            if k <= level:
+                continue
+            del self.branching_history[k]
+            del self.propagate_history[k]
 
 
 

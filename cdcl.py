@@ -1,6 +1,25 @@
 import copy
 import time
 
+
+# O(1)
+def pick_branching_variable_vsids(variables, level, vsids_scores_positive, vsids_scores_negative):
+    max_score = float("-inf")
+    variable_choice = None
+    assignment = None
+    for variable in variables[level]:
+        if vsids_scores_positive[variable] > max_score:
+            max_score = vsids_scores_positive[variable]
+            variable_choice = variable
+            assignment = 1
+        if vsids_scores_negative[variable] > max_score:
+            max_score = vsids_scores_positive[variable]
+            variable_choice = variable
+            assignment = 0
+
+    return variable_choice, assignment
+
+
 # O(1)
 def pick_branching_variable(variables, level):
     return variables[level][0], 1
@@ -11,7 +30,7 @@ def variable_assignment(assignment, variables, level, update_literal, update_val
     assignment[level][update_literal] = (update_value, antecedent_idx, level)
     total_history[level].append(update_literal)
 
-# O(1)
+# O(3)
 def evaluate_clause(clause, assignment, level):
     count_false = 0
     unassigned = None
@@ -52,6 +71,7 @@ def unit_prop(clauses, assignment, variables, level, total_history):
     return None
 
 
+# O(1)
 def backtrack(assignment, variables, level, branching_history, total_history):
     del assignment[level+1:]
     del variables[level+1:]
@@ -66,70 +86,155 @@ def sanity_check(assignment, variables, branching_history, total_history, size):
     assert len(total_history) == size
 
 
-def next_recent_assigned(clause, level_history):
+def get_last_assigned(clause, level_history):
     for v in reversed(level_history):
-        if v in clause or -v in clause:
-            return v, [x for x in clause if abs(x) != abs(v)]
+        if v in clause:
+            return v
+        if -v in clause:
+            return -v
 
 
-def conflict_analyze(conf_cls, total_history, assignment, clauses, level):
+def conflict_analysis_single_UIP(conflict_clause, total_history, assignment, clauses, level,
+                                vsids_scores_positive, vsids_scores_negative):
     if level == 0:
         return -1, None
 
-    pool_lits = conf_cls
-    done_lits = set()
-    curr_level_lits = set()
-    prev_level_lits = set()
+    to_check = conflict_clause
+    resolved = set()
+    to_resolve = set()
+    learnt_clause = set()
 
     while True:
-        for lit in pool_lits:
+        for lit in to_check:
             if assignment[level][abs(lit)][2] == level:
-                curr_level_lits.add(lit)
+                to_resolve.add(lit)
             else:
-                prev_level_lits.add(lit)
+                learnt_clause.add(lit)
 
-        if len(curr_level_lits) == 1:
+        if len(to_resolve) == 1:
             break
 
-        last_assigned, others = next_recent_assigned(curr_level_lits, total_history[level])
+        last_assigned = get_last_assigned(to_resolve, total_history[level])
 
-        done_lits.add(abs(last_assigned))
-        curr_level_lits = set(others)
+        resolved.add(abs(last_assigned))
+        to_resolve.remove(last_assigned)
 
         if assignment[level][abs(last_assigned)][1] is None:
-            pool_lits = []
+            to_check = []
         else:
-            pool_clause = clauses[assignment[level][abs(last_assigned)][1]]
-            pool_lits = [l for l in pool_clause if abs(l) not in done_lits]
+            antecedent = clauses[assignment[level][abs(last_assigned)][1]]
+            to_check = [l for l in antecedent if abs(l) not in resolved]
 
-    learnt = [l for l in curr_level_lits.union(prev_level_lits)]
-    if prev_level_lits:
-        level = max([assignment[level][abs(x)][2] for x in prev_level_lits])
+    learnt = [l for l in to_resolve.union(learnt_clause)]
+    if learnt_clause:
+        level = max([assignment[level][abs(x)][2] for x in learnt_clause])
     else:
         level = level - 1
+    vsids_scores_positive = [i * 0.9 for i in vsids_scores_positive]
+    vsids_scores_negative = [i * 0.9 for i in vsids_scores_negative]
+    for literal in learnt:
+        if literal > 0:
+            vsids_scores_positive[abs(literal)] += 1
+        else:
+            vsids_scores_negative[abs(literal)] += 1
     return level, learnt
 
 
-def CDCL(clauses, assignment, variables, branching_history, total_history):
+def conflict_analysis(conflict_clause, total_history, assignment, clauses, level,
+                     vsids_scores_positive, vsids_scores_negative):
+    if level == 0:
+        return -1, None
+
+    to_check = conflict_clause
+    resolved = set()
+    to_resolve = set()
+    learnt_clause = set()
+
+    while True:
+        for lit in to_check:
+            if assignment[level][abs(lit)][1] is not None:
+                to_resolve.add(lit)
+            else:
+                learnt_clause.add(lit)
+
+        if len(to_resolve) == 0:
+            break
+
+        last_assigned = get_last_assigned(to_resolve, total_history[level])
+
+        resolved.add(abs(last_assigned))
+        to_resolve.remove(last_assigned)
+
+        if assignment[level][abs(last_assigned)][1] is None:
+            to_check = []
+        else:
+            antecedent = clauses[assignment[level][abs(last_assigned)][1]]
+            to_check = [l for l in antecedent if abs(l) not in resolved]
+
+    learnt = [l for l in to_resolve.union(learnt_clause)]
+    if len(learnt_clause) == 1:
+        level = level - 1
+    else:
+        max_level = float("-inf")
+        second_max_level = float("-inf")
+        for level in [assignment[level][abs(x)][2] for x in learnt_clause]:
+            if level > max_level:
+                second_max_level = max_level
+                max_level = level
+            elif level > second_max_level:
+                second_max_level = level
+        level = second_max_level
+    for i in range(len(vsids_scores_positive)):
+        vsids_scores_positive[i] = vsids_scores_positive[i] * 0.9
+        vsids_scores_negative[i] = vsids_scores_negative[i] * 0.9
+    for literal in learnt:
+        if literal > 0:
+            vsids_scores_positive[abs(literal)] += 1
+        else:
+            vsids_scores_negative[abs(literal)] += 1
+    return level, learnt
+
+
+def CDCL(clauses, assignment, variables, branching_history, total_history, single_UIP, VSIDS):
     # Initialize variables
+    num_loop = 0
     level = 0
 
+    vsids_scores_positive = [0] * (len(variables[0]) + 1)
+    vsids_scores_negative = [0] * (len(variables[0]) + 1)
+    for clause in clauses:
+        for literal in clause:
+            if literal > 0:
+                vsids_scores_positive[abs(literal)] += 1
+            else:
+                vsids_scores_negative[abs(literal)] += 1
     # Backtrack seach loop
     while len(variables[level]) != 0:
+        num_loop += 1
         # Pick variable
         # Run unit prop
         unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
         if unsat_clause is not None:
-            level, learnt = conflict_analyze(unsat_clause, total_history, assignment, clauses, level)
-            if level < 0:
-                return False
-            clauses.add(copy.deepcopy(learnt))
+            if single_UIP:
+                level, learnt = conflict_analysis_single_UIP(unsat_clause, total_history, assignment, clauses, level,
+                                                                vsids_scores_positive, vsids_scores_negative)
+            else:
+                level, learnt = conflict_analysis(unsat_clause, total_history, assignment, clauses, level,
+                                                    vsids_scores_positive, vsids_scores_negative)
 
+            if level < 0:
+                return False, num_loop
+            clauses.append(copy.deepcopy(learnt))
             backtrack(assignment, variables, level, branching_history, total_history)
+
         elif len(variables[level]) == 0:
             break
         else:
-            update_literal, update_value = pick_branching_variable(variables, level)
+            if VSIDS:
+                update_literal, update_value = pick_branching_variable_vsids(variables, level, vsids_scores_positive,
+                                                                             vsids_scores_negative)
+            else:
+                update_literal, update_value = pick_branching_variable(variables, level)
 
             # Branch and expand search tree, go to next level
             assignment.append(copy.deepcopy(assignment[level]))
@@ -137,8 +242,6 @@ def CDCL(clauses, assignment, variables, branching_history, total_history):
             branching_history.append(update_literal)
             total_history.append(copy.deepcopy(total_history[level]))
             level += 1
-
-            # Run Unit Prop
+            # Assign Variable
             variable_assignment(assignment, variables, level, update_literal, update_value, None, total_history)
-
-    return True
+    return True, num_loop

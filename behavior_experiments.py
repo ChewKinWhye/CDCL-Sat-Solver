@@ -11,7 +11,7 @@ if __name__ == "__main__":
     n = 150
     k = 4
     num_test_cases = 50
-    r_values = [x * 0.2 for x in range(45, 51)]
+    r_values = [x * 0.2 for x in range(48, 51)]
     results = []
     save_directory = join("experiment_results", f"k={k}")
 

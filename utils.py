@@ -60,7 +60,7 @@ def read_data(file_path):
     num_variables = 0
     num_clauses = 0
     cnf = []
-    with open(os.path.join(base_dir, file_path)) as f:
+    with open(file_path) as f:
         lines = f.readlines()
         for line in lines:
             if line[0] == 'c':
@@ -81,7 +81,7 @@ def obtain_labels(num_test_cases):
     num_sat = 0
     for i in range(1, num_test_cases+1):
         s = Solver()
-        file = f"test_case_{i}.cnf"
+        file = os.path.join(base_dir, f"test_case_{i}.cnf")
         _, _, cnf = read_data(file)
         for row in cnf:
             s.add_clause(row)
