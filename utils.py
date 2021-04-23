@@ -46,7 +46,7 @@ def generate_test_case(N, L, K):
                 DIMACS += f"{variable} "
             else:
                 DIMACS += f"{-variable} "
-            DIMACS += "0\n"
+        DIMACS += "0\n"
     return DIMACS
 
 def generate_test_cases(N, L, K, num_test_cases):

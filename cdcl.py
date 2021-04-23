@@ -72,17 +72,15 @@ def unit_prop(clauses, assignment, variables, level, total_history):
 
 
 # O(1)
-def backtrack(assignment, variables, level, branching_history, total_history):
+def backtrack(assignment, variables, level, total_history):
     del assignment[level+1:]
     del variables[level+1:]
-    del branching_history[level+1:]
     del total_history[level+1:]
 
 
-def sanity_check(assignment, variables, branching_history, total_history, size):
+def sanity_check(assignment, variables, total_history, size):
     assert len(assignment) == size
     assert len(variables) == size
-    assert len(branching_history) == size
     assert len(total_history) == size
 
 
@@ -195,9 +193,14 @@ def conflict_analysis(conflict_clause, total_history, assignment, clauses, level
     return level, learnt
 
 
-def CDCL(clauses, assignment, variables, branching_history, total_history, single_UIP, VSIDS):
+def CDCL(clauses, single_UIP, VSIDS):
     # Initialize variables
-    num_loop = 0
+    variables = set()
+    for row in clauses:
+        for variable in row:
+            variables.add(abs(variable))
+    variables = [list(variables)]
+    assignment, total_history = [{}], [[]]
     level = 0
 
     vsids_scores_positive = [0] * (len(variables[0]) + 1)
@@ -210,7 +213,6 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, singl
                 vsids_scores_negative[abs(literal)] += 1
     # Backtrack seach loop
     while len(variables[level]) != 0:
-        num_loop += 1
         # Pick variable
         # Run unit prop
         unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
@@ -223,9 +225,9 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, singl
                                                     vsids_scores_positive, vsids_scores_negative)
 
             if level < 0:
-                return False, num_loop, assignment[level]
+                return "False", assignment[level]
             clauses.append(copy.deepcopy(learnt))
-            backtrack(assignment, variables, level, branching_history, total_history)
+            backtrack(assignment, variables, level, total_history)
 
         elif len(variables[level]) == 0:
             break
@@ -239,9 +241,8 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, singl
             # Branch and expand search tree, go to next level
             assignment.append(copy.deepcopy(assignment[level]))
             variables.append(copy.deepcopy(variables[level]))
-            branching_history.append(update_literal)
             total_history.append(copy.deepcopy(total_history[level]))
             level += 1
             # Assign Variable
             variable_assignment(assignment, variables, level, update_literal, update_value, None, total_history)
-    return True, num_loop, assignment[level]
+    return "True", assignment[level]
