@@ -1,28 +1,67 @@
 import copy
 import time
+import random
 
 
 # O(1)
-def pick_branching_variable_vsids(variables, level, vsids_scores_positive, vsids_scores_negative):
+
+def pick_branching_variable_vsids(variables, level, vsids_scores_positive, vsids_scores_negative, most_recent_unsat):
     max_score = float("-inf")
     variable_choice = None
     assignment = None
-    for variable in variables[level]:
-        if vsids_scores_positive[variable] > max_score:
-            max_score = vsids_scores_positive[variable]
-            variable_choice = variable
-            assignment = 1
-        if vsids_scores_negative[variable] > max_score:
-            max_score = vsids_scores_positive[variable]
-            variable_choice = variable
-            assignment = 0
+    if most_recent_unsat is not None:
+        for variable in most_recent_unsat:
+            if variable not in variables[level]:
+                continue
+            if vsids_scores_positive[variable] > max_score:
+                max_score = vsids_scores_positive[variable]
+                variable_choice = abs(variable)
+                assignment = 1
+            if vsids_scores_negative[variable] > max_score:
+                max_score = vsids_scores_positive[variable]
+                variable_choice = abs(variable)
+                assignment = 0
+
+    if variable_choice is None:
+        max_score = float("-inf")
+        variable_choice = None
+        assignment = None
+        for variable in variables[level]:
+            if vsids_scores_positive[variable] > max_score:
+                max_score = vsids_scores_positive[variable]
+                variable_choice = variable
+                assignment = 1
+            if vsids_scores_negative[variable] > max_score:
+                max_score = vsids_scores_positive[variable]
+                variable_choice = variable
+                assignment = 0
 
     return variable_choice, assignment
 
 
 # O(1)
-def pick_branching_variable(variables, level):
-    return variables[level][0], 1
+def pick_branching_variable_random(variables, level):
+    return random.sample(variables[level], 1)[0], 1
+
+
+def pick_branching_variable_2_clause(variables, level, clauses):
+    # Initialize number of occurrences
+    occurrences = {}
+    for variable in variables[level]:
+        occurrences[variable] = 0
+    # Increment occurrences
+    for clause in clauses:
+        for literal in clause:
+            if abs(literal) in variables[level]:
+                occurrences[abs(literal)] += 1
+    max_value = float("-inf")
+    max_literal = None
+    for key in occurrences:
+        if occurrences[key] > max_value:
+            max_literal = key
+            max_value = occurrences[key]
+    return max_literal, 1
+
 
 # O(1)
 def variable_assignment(assignment, variables, level, update_literal, update_value, antecedent_idx, total_history):
@@ -102,6 +141,14 @@ def conflict_analysis_single_UIP(conflict_clause, total_history, assignment, cla
     to_resolve = set()
     learnt_clause = set()
 
+    for literal in conflict_clause:
+        if assignment[level][abs(literal)][1] is None:
+            continue
+        for antecedent_literal in clauses[assignment[level][abs(literal)][1]]:
+            if antecedent_literal > 0:
+                vsids_scores_positive[abs(antecedent_literal)] += 1
+            else:
+                vsids_scores_negative[abs(antecedent_literal)] += 1
     while True:
         for lit in to_check:
             if assignment[level][abs(lit)][2] == level:
@@ -128,13 +175,7 @@ def conflict_analysis_single_UIP(conflict_clause, total_history, assignment, cla
         level = max([assignment[level][abs(x)][2] for x in learnt_clause])
     else:
         level = level - 1
-    vsids_scores_positive = [i * 0.9 for i in vsids_scores_positive]
-    vsids_scores_negative = [i * 0.9 for i in vsids_scores_negative]
-    for literal in learnt:
-        if literal > 0:
-            vsids_scores_positive[abs(literal)] += 1
-        else:
-            vsids_scores_negative[abs(literal)] += 1
+
     return level, learnt
 
 
@@ -147,6 +188,15 @@ def conflict_analysis(conflict_clause, total_history, assignment, clauses, level
     resolved = set()
     to_resolve = set()
     learnt_clause = set()
+
+    for literal in conflict_clause:
+        if assignment[level][abs(literal)][1] is None:
+            continue
+        for antecedent_literal in clauses[assignment[level][abs(literal)][1]]:
+            if antecedent_literal > 0:
+                vsids_scores_positive[abs(antecedent_literal)] += 1
+            else:
+                vsids_scores_negative[abs(antecedent_literal)] += 1
 
     while True:
         for lit in to_check:
@@ -182,18 +232,10 @@ def conflict_analysis(conflict_clause, total_history, assignment, clauses, level
             elif level > second_max_level:
                 second_max_level = level
         level = second_max_level
-    for i in range(len(vsids_scores_positive)):
-        vsids_scores_positive[i] = vsids_scores_positive[i] * 0.9
-        vsids_scores_negative[i] = vsids_scores_negative[i] * 0.9
-    for literal in learnt:
-        if literal > 0:
-            vsids_scores_positive[abs(literal)] += 1
-        else:
-            vsids_scores_negative[abs(literal)] += 1
     return level, learnt
 
 
-def CDCL(clauses, single_UIP, VSIDS):
+def CDCL(clauses, single_UIP, branching_heuristic):
     # Initialize variables
     variables = set()
     for row in clauses:
@@ -212,11 +254,13 @@ def CDCL(clauses, single_UIP, VSIDS):
             else:
                 vsids_scores_negative[abs(literal)] += 1
     # Backtrack seach loop
+    most_recent_unsat = None
     while len(variables[level]) != 0:
         # Pick variable
         # Run unit prop
         unsat_clause = unit_prop(clauses, assignment, variables, level, total_history)
         if unsat_clause is not None:
+            most_recent_unsat = unsat_clause
             if single_UIP:
                 level, learnt = conflict_analysis_single_UIP(unsat_clause, total_history, assignment, clauses, level,
                                                                 vsids_scores_positive, vsids_scores_negative)
@@ -225,18 +269,20 @@ def CDCL(clauses, single_UIP, VSIDS):
                                                     vsids_scores_positive, vsids_scores_negative)
 
             if level < 0:
-                return "False", assignment[level]
+                return "False", None
             clauses.append(copy.deepcopy(learnt))
             backtrack(assignment, variables, level, total_history)
 
         elif len(variables[level]) == 0:
             break
         else:
-            if VSIDS:
+            if branching_heuristic == "VSIDS":
                 update_literal, update_value = pick_branching_variable_vsids(variables, level, vsids_scores_positive,
-                                                                             vsids_scores_negative)
-            else:
-                update_literal, update_value = pick_branching_variable(variables, level)
+                                                                             vsids_scores_negative, most_recent_unsat)
+            elif branching_heuristic == "random":
+                update_literal, update_value = pick_branching_variable_random(variables, level)
+            elif branching_heuristic == "2-clause":
+                update_literal, update_value = pick_branching_variable_2_clause(variables, level, clauses)
 
             # Branch and expand search tree, go to next level
             assignment.append(copy.deepcopy(assignment[level]))
