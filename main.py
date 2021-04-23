@@ -48,25 +48,33 @@ def test_einstein():
         for variable in row:
             prop.add(abs(variable))
     start = time.perf_counter()
-    for i in range(200):
-        sat = CDCL(cnf, [{}], [list(prop)], [-1], [[]], single_UIP, VSIDS)
+    for i in range(1):
+        sat, _, assignment = CDCL(cnf, [{}], [list(prop)], [-1], [[]], single_UIP, VSIDS)
         if sat:
             sat = "True"
         else:
             sat = "False"
     time_taken = time.perf_counter() - start
     print(sat, time_taken/200)
+    reference = [""]
+    with open("reference.txt", "r") as f:
+        for x in f:
+            if len(x) > 2:
+                reference.append(x[6:-1])
+    for prop_idx in prop:
+        if assignment[prop_idx][0] == 1:
+            print(reference[int(prop_idx)])
 
 
 if __name__ == "__main__":
     test_einstein()
-    num_test_cases = 50
-    generate_test_cases(100, 450, 3, num_test_cases)
-    print("Test cases generated")
-    obtain_labels(num_test_cases)
-    print("Labels obtained")
-    test_CDCL(num_test_cases)
-    print("Predictions obtained")
-    accuracy, average_time_slower = calc_accuracy(num_test_cases)
-    print(f"Accuracy = {accuracy * 100}%")
-    print(f"Slower by {average_time_slower}s on average")
+    # num_test_cases = 50
+    # generate_test_cases(100, 450, 3, num_test_cases)
+    # print("Test cases generated")
+    # obtain_labels(num_test_cases)
+    # print("Labels obtained")
+    # test_CDCL(num_test_cases)
+    # print("Predictions obtained")
+    # accuracy, average_time_slower = calc_accuracy(num_test_cases)
+    # print(f"Accuracy = {accuracy * 100}%")
+    # print(f"Slower by {average_time_slower}s on average")

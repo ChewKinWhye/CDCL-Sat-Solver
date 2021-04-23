@@ -223,7 +223,7 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, singl
                                                     vsids_scores_positive, vsids_scores_negative)
 
             if level < 0:
-                return False, num_loop
+                return False, num_loop, assignment[level]
             clauses.append(copy.deepcopy(learnt))
             backtrack(assignment, variables, level, branching_history, total_history)
 
@@ -244,4 +244,4 @@ def CDCL(clauses, assignment, variables, branching_history, total_history, singl
             level += 1
             # Assign Variable
             variable_assignment(assignment, variables, level, update_literal, update_value, None, total_history)
-    return True, num_loop
+    return True, num_loop, assignment[level]
